@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "825450979918",
+    "project_id": "vinyl-library-12626",
+    "storage_bucket": "vinyl-library-12626.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:825450979918:android:797e93075e00b37988991f",
+        "android_client_info": {
+          "package_name": "com.example.vinyl_library"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZi0wYOauxTuhpiI3QS8vys8h1zr-o_08"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
