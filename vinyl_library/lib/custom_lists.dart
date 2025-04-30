@@ -1,183 +1,145 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'collection_detail_page.dart'; // Ensure you have this file
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'collection_detail_page.dart';
 
 class CustomListsPage extends StatelessWidget {
-  // Define a required parameter to receive record data from the album detail page.
-  final Map<String, dynamic> recordData;
+  final Map<String, dynamic>? recordData;
 
-  const CustomListsPage({Key? key, required this.recordData}) : super(key: key);
+  const CustomListsPage({Key? key, this.recordData}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    // Retrieve the currently authenticated user.
-    final User? user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       return const Scaffold(
-        body: Center(child: Text("User not authenticated.")),
+        body: Center(child: Text("Sign in to view collections")),
       );
     }
 
+    final listsRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('lists');
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Your Collections"),
-      ),
-      // Floating Action Button to create a new collection.
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final TextEditingController _newListController =
-              TextEditingController();
-          await showDialog(
-            context: context,
-            builder: (context) {
-              return AlertDialog(
-                title: const Text("Create New Collection"),
-                content: TextField(
-                  controller: _newListController,
-                  decoration: const InputDecoration(
-                    labelText: "Collection Name",
+      appBar: AppBar(title: const Text('Your Collections')),
+      floatingActionButton: recordData == null
+          ? FloatingActionButton(
+              onPressed: () async {
+                final ctrl = TextEditingController();
+                await showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('New Collection'),
+                    content: TextField(controller: ctrl),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          final name = ctrl.text.trim();
+                          if (name.isNotEmpty) {
+                            await listsRef.add({
+                              'name': name,
+                              'createdAt': FieldValue.serverTimestamp(),
+                            });
+                            Navigator.pop(context);
+                          }
+                        },
+                        child: const Text('Create'),
+                      ),
+                    ],
                   ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop(); // Close dialog.
-                    },
-                    child: const Text("Cancel"),
-                  ),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final name = _newListController.text.trim();
-                      if (name.isNotEmpty) {
-                        try {
-                          await FirebaseFirestore.instance
-                              .collection('users')
-                              .doc(user.uid)
-                              .collection('lists')
-                              .add({
-                            'name': name,
-                            'createdAt': FieldValue.serverTimestamp(),
-                          });
-                          Navigator.of(context).pop(); // Close the dialog.
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text("Collection '$name' created")),
-                          );
-                        } catch (e) {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content:
-                                    Text("Error creating collection: $e")),
-                          );
-                        }
-                      }
-                    },
-                    child: const Text("Create"),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-        child: const Icon(Icons.add),
-        tooltip: "Create New Collection",
-      ),
-      // Main body: Display list of collections.
+                );
+              },
+              child: const Icon(Icons.add),
+            )
+          : null,
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('lists')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
-          if (snapshot.connectionState == ConnectionState.waiting) {
+        stream: listsRef.orderBy('createdAt', descending: true).snapshots(),
+        builder: (ctx, snap) {
+          if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-
-          final List<QueryDocumentSnapshot> lists = snapshot.data!.docs;
-          if (lists.isEmpty) {
-            return const Center(
-              child: Text("No collections found. Use the '+' button to create one."),
-            );
+          final docs = snap.data!.docs;
+          if (docs.isEmpty) {
+            return const Center(child: Text('No collections yet'));
           }
-
-          return ListView.builder(
-            itemCount: lists.length,
-            itemBuilder: (context, index) {
-              final listDoc = lists[index];
-              final String listName = listDoc['name'] ?? "Unnamed Collection";
-
+          return ListView(
+            children: docs.map((doc) {
+              final name = doc['name'] as String;
               return Card(
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: ListTile(
-                  title: Text(listName),
-                  // Nested StreamBuilder to count records in the collection.
-                  subtitle: StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(user.uid)
-                        .collection('lists')
-                        .doc(listDoc.id)
-                        .collection('records')
-                        .snapshots(),
-                    builder: (context, recordSnapshot) {
-                      if (recordSnapshot.hasError) {
-                        return const Text("Error loading records");
-                      }
-                      if (recordSnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const Text("Loading records...");
-                      }
-                      final int recordCount =
-                          recordSnapshot.data!.docs.length;
-                      return Text(
-                          "$recordCount record${recordCount == 1 ? "" : "s"}");
-                    },
+                  title: Text(name),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Delete button
+                      IconButton(
+                        icon: const Icon(Icons.delete),
+                        color: Theme.of(context).colorScheme.error,
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Delete Collection'),
+                              content: Text('Are you sure you want to delete "$name"?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) {
+                            await listsRef.doc(doc.id).delete();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Deleted "$name"')),
+                            );
+                          }
+                        },
+                      ),
+                      // Just an icon now — ListTile.onTap handles the action
+                      const Icon(Icons.chevron_right),
+                    ],
                   ),
-                  // On tapping a collection:
-                  // If recordData is non-empty, add the record to the collection.
-                  // Then navigate to the CollectionDetailPage to show its albums.
+
+                  // Make the entire tile tappable
                   onTap: () async {
-                    try {
-                      // If recordData is non-empty, add it to Firestore.
-                      if (recordData.isNotEmpty) {
-                        await FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(user.uid)
-                            .collection('lists')
-                            .doc(listDoc.id)
-                            .collection('records')
-                            .add(recordData);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text("Record added to collection")),
-                        );
-                      }
-                      // Navigate to collection detail page.
+                    if (recordData != null) {
+                      // Add recordData into this list
+                      await listsRef
+                          .doc(doc.id)
+                          .collection('records')
+                          .add(recordData!);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Added to "$name"')),
+                      );
+                    } else {
+                      // Navigate to detail page
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => CollectionDetailPage(
-                            listId: listDoc.id,
-                            listName: listName,
+                          builder: (_) => CollectionDetailPage(
+                            listId: doc.id,
+                            listName: name,
                           ),
                         ),
-                      );
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Error: $e")),
                       );
                     }
                   },
                 ),
               );
-            },
+            }).toList(),
           );
         },
       ),

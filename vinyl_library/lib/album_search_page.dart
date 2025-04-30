@@ -1,68 +1,57 @@
-// album_search_page.dart
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+
 import 'album_detail.dart';
 
 class AlbumSearchPage extends StatefulWidget {
-  const AlbumSearchPage({super.key});
-
+  const AlbumSearchPage({Key? key}) : super(key: key);
   @override
   State<AlbumSearchPage> createState() => _AlbumSearchPageState();
 }
 
 class _AlbumSearchPageState extends State<AlbumSearchPage> {
-  final TextEditingController _controller = TextEditingController();
-  List<dynamic> _searchResults = [];
-  bool _isLoading = false;
-  String? _errorMessage;
-  final String apiToken = "BJkBPJwNBAYaeOkmoeOBgJimeJElBAzePUsWUDQJ";
+  final _controller = TextEditingController();
+  List<dynamic> _results = [];
+  bool _loading = false;
+  String? _error;
+  final String _token = "BJkBPJwNBAYaeOkmoeOBgJimeJElBAzePUsWUDQJ";
 
-  Future<void> searchAlbums(String title) async {
-    String searchTerm = _controller.text.trim();
-    if (searchTerm.isEmpty) return;
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-      _searchResults = [];
+  Future<void> searchAlbums(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() { _loading = true; _error = null; _results = []; });
+    final uri = Uri.https('api.discogs.com', '/database/search', {
+      'q': query,
+      'type': 'release',
+      'token': _token,
     });
-
-    final String apiUrl =
-        "https://api.discogs.com/database/search?q=${Uri.encodeComponent(searchTerm)}&type=release&token=$apiToken";
-
     try {
-      final response = await http.get(Uri.parse(apiUrl));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _searchResults = data['results'];
-        });
+      final resp = await http.get(uri);
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body)['results'] as List<dynamic>;
+        final Map<int, dynamic> unique = {};
+        for (var r in data) {
+          final key = (r['master_id'] ?? r['id']) as int;
+          if (!unique.containsKey(key)) unique[key] = r;
+        }
+        _results = unique.values.toList();
       } else {
-        setState(() {
-          _errorMessage =
-              "Error: ${response.statusCode} - ${response.reasonPhrase}";
-        });
+        _error = "Error ${resp.statusCode}: ${resp.reasonPhrase}";
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = "Failed to fetch data: $e";
-      });
+      _error = "Failed to search: $e";
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
-  void _navigateToAlbumDetail(dynamic album) {
+  void _openDetail(dynamic album) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AlbumDetailPage(
-          albumId: album['id'],
-          albumTitle: album['title'],
+        builder: (_) => AlbumDetailPage(
+          albumId: album['id'] as int,
+          albumTitle: album['title'] as String,
         ),
       ),
     );
@@ -71,47 +60,50 @@ class _AlbumSearchPageState extends State<AlbumSearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Album Search")),
+      appBar: AppBar(title: const Text('Search Albums')),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
               controller: _controller,
               decoration: const InputDecoration(
-                labelText: "Enter search query",
-                border: OutlineInputBorder(),
+                hintText: 'Album title',
+                prefixIcon: Icon(Icons.search),
               ),
-              onSubmitted: (value) => searchAlbums(value),
+              onSubmitted: searchAlbums,
             ),
-            const SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () => searchAlbums(_controller.text),
-              child: const Text("Search Albums"),
-            ),
-            const SizedBox(height: 20),
-            if (_isLoading) const Center(child: CircularProgressIndicator()),
-            if (_errorMessage != null)
-              Text(
-                _errorMessage!,
-                style: const TextStyle(
-                    color: Colors.red, fontWeight: FontWeight.bold),
+            const SizedBox(height: 12),
+            if (_loading) const LinearProgressIndicator(),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_error!,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
             Expanded(
               child: ListView.builder(
-                itemCount: _searchResults.length,
-                itemBuilder: (context, index) {
-                  final album = _searchResults[index];
-                  return ListTile(
-                    leading: album['cover_image'] != null
-                        ? Image.network(album['cover_image'],
-                            width: 50, height: 50, fit: BoxFit.cover)
-                        : const Icon(Icons.music_note, size: 50),
-                    title: Text(album['title'] ?? "Unknown Title"),
-                    subtitle: Text(album['year'] != null
-                        ? "Year: ${album['year']}"
-                        : "Unknown Year"),
-                    onTap: () => _navigateToAlbumDetail(album),
+                itemCount: _results.length,
+                itemBuilder: (ctx, i) {
+                  final a = _results[i] as Map<String, dynamic>;
+                  return Card(
+                    child: ListTile(
+                      leading: a['cover_image'] != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.network(
+                                a['cover_image'] as String,
+                                width: 50,
+                                height: 50,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : const Icon(Icons.album),
+                      title: Text(a['title'] ?? 'Unknown'),
+                      subtitle: Text(a['year']?.toString() ?? ''),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openDetail(a),
+                    ),
                   );
                 },
               ),

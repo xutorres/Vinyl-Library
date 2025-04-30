@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'custom_lists.dart'; 
+
+import 'custom_lists.dart';
 
 class AlbumDetailPage extends StatefulWidget {
   final int albumId;
@@ -18,194 +19,157 @@ class AlbumDetailPage extends StatefulWidget {
 }
 
 class _AlbumDetailPageState extends State<AlbumDetailPage> {
-  Map<String, dynamic>? _albumData;
-  bool _isLoading = false;
-  String? _errorMessage;
-  final String apiToken = "BJkBPJwNBAYaeOkmoeOBgJimeJElBAzePUsWUDQJ";
+  Map<String, dynamic>? _data;
+  bool _loading = false;
+  String? _error;
+  final String _token = "BJkBPJwNBAYaeOkmoeOBgJimeJElBAzePUsWUDQJ";
 
   @override
   void initState() {
     super.initState();
-    fetchAlbumDetails();
+    _load();
   }
 
-  Future<void> fetchAlbumDetails() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    final url = Uri.parse(
-        "https://api.discogs.com/releases/${widget.albumId}?token=$apiToken");
-
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final uri = Uri.parse(
+        "https://api.discogs.com/releases/${widget.albumId}?token=$_token");
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        setState(() {
-          _albumData = jsonDecode(response.body);
-        });
+      final resp = await http.get(uri);
+      if (resp.statusCode == 200) {
+        _data = jsonDecode(resp.body);
       } else {
-        setState(() {
-          _errorMessage =
-              "Error: ${response.statusCode} - ${response.reasonPhrase}";
-        });
+        _error = "Error ${resp.statusCode}";
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = "Failed to fetch data: $e";
-      });
+      _error = e.toString();
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
-  /// Shows the full album cover in a dialog.
-  void _showFullImage(String imageUrl) {
+  void _showImage(String url) {
     showDialog(
       context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          child: InteractiveViewer(
-            panEnabled: true,
-            boundaryMargin: const EdgeInsets.all(20),
-            minScale: 0.5,
-            maxScale: 2.5,
-            child: Image.network(imageUrl, fit: BoxFit.contain),
-          ),
-        );
-      },
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: InteractiveViewer(
+          panEnabled: true,
+          boundaryMargin: const EdgeInsets.all(20),
+          minScale: 0.5,
+          maxScale: 2.5,
+          child: Image.network(url, fit: BoxFit.contain),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoCard(String title, List<String> items) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text(items.join(', ')),
+          ],
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final d = _data;
     return Scaffold(
       appBar: AppBar(title: Text(widget.albumTitle)),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(
-                          color: Colors.red, fontWeight: FontWeight.bold),
-                    ),
-                  )
-                : _albumData != null
-                    ? SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Album Title
-                            Text(
-                              _albumData!['title'] ?? "Unknown Title",
-                              style: const TextStyle(
-                                  fontSize: 22, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 10),
-                            // Artist and Year
-                            Text(
-                              "Artist: ${_albumData!['artists'][0]['name'] ?? "Unknown"}",
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                            Text(
-                              "Year: ${_albumData!['year'] ?? "Unknown"}",
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                            const SizedBox(height: 10),
-                            // Album Cover as a small image, click to enlarge.
-                            if (_albumData!['images'] != null &&
-                                _albumData!['images'].isNotEmpty)
-                              GestureDetector(
-                                onTap: () => _showFullImage(
-                                    _albumData!['images'][0]['uri']),
-                                child: Center(
-                                  child: Image.network(
-                                    _albumData!['images'][0]['uri'],
-                                    width: 120,
-                                    height: 120,
-                                    fit: BoxFit.cover,
-                                  ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!))
+              : d == null
+                  ? const Center(child: Text("No data"))
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (d['images'] != null && d['images'].isNotEmpty)
+                            Center(
+                              child: GestureDetector(
+                                onTap: () => _showImage(d['images'][0]['uri']),
+                                child: Image.network(
+                                  d['images'][0]['uri'],
+                                  width: 120,
+                                  height: 120,
+                                  fit: BoxFit.cover,
                                 ),
                               ),
-                            const SizedBox(height: 20),
-                            // Tracklist header
-                            const Text(
-                              "Tracklist:",
-                              style: TextStyle(
-                                  fontSize: 20, fontWeight: FontWeight.bold),
                             ),
-                            const SizedBox(height: 5),
-                            // Display the tracklist.
-                            _albumData!['tracklist'] != null &&
-                                    _albumData!['tracklist'].isNotEmpty
-                                ? ListView.builder(
-                                    shrinkWrap: true,
-                                    physics:
-                                        const NeverScrollableScrollPhysics(),
-                                    itemCount:
-                                        _albumData!['tracklist'].length,
-                                    itemBuilder: (context, index) {
-                                      final track =
-                                          _albumData!['tracklist'][index];
-                                      return ListTile(
-                                        leading: Text(
-                                          "${index + 1}.",
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                        title: Text(
-                                            track['title'] ?? "Unknown Track"),
-                                        subtitle: Text(
-                                            "Duration: ${track['duration'] ?? "N/A"}"),
-                                      );
-                                    },
+                          const SizedBox(height: 16),
+                          Text(d['title'] ?? 'Unknown Title',
+                              style: const TextStyle(
+                                  fontSize: 22, fontWeight: FontWeight.bold),
+                              textAlign: TextAlign.center),
+                          const SizedBox(height: 4),
+                          Text(
+                            "${d['artists'][0]['name']} • ${d['year']}",
+                            style: const TextStyle(fontSize: 16),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          _infoCard('Genres', List<String>.from(d['genres'] ?? [])),
+                          _infoCard('Styles', List<String>.from(d['styles'] ?? [])),
+                          _infoCard('Labels',
+                              (d['labels'] as List).map((l) => l['name'] as String).toList()),
+                          _infoCard('Formats',
+                              (d['formats'] as List).map((f) => f['name'] as String).toList()),
+                          const Divider(),
+                          ExpansionTile(
+                            title: const Text('Tracklist'),
+                            children: [
+                              if ((d['tracklist'] as List?)?.isNotEmpty ?? false)
+                                for (int i = 0; i < d['tracklist'].length; i++)
+                                  ListTile(
+                                    dense: true,
+                                    leading: Text('${i + 1}.'),
+                                    title: Text(d['tracklist'][i]['title'] ?? ''),
+                                    subtitle: Text(d['tracklist'][i]['duration'] ?? ''),
                                   )
-                                : const Center(
-                                    child: Text(
-                                      "No tracklist available.",
-                                      style: TextStyle(fontSize: 16),
-                                    ),
-                                  ),
-                            const SizedBox(height: 20),
-                            // Button to add the album to a custom list.
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.playlist_add),
-                              label: const Text("Add to Custom List"),
-                              onPressed: () {
-                                // Define recordData using album details.
-                                final Map<String, dynamic> recordData = {
-                                  'albumId': widget.albumId,
-                                  'title': _albumData!['title'],
-                                  'artist': _albumData!['artists'][0]['name'] ??
-                                      "Unknown",
-                                  'year': _albumData!['year'],
-                                  'cover_image': _albumData!['images'] != null &&
-                                          _albumData!['images'].isNotEmpty
-                                      ? _albumData!['images'][0]['uri']
-                                      : null,
-                                };
-
-                                // Navigate to CustomListsPage, passing the recordData.
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        CustomListsPage(recordData: recordData),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      )
-                    : const Center(child: Text("No data available")),
-      ),
+                              else
+                                const ListTile(title: Text('No tracks')),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+      floatingActionButton: d == null
+          ? null
+          : FloatingActionButton.extended(
+              icon: const Icon(Icons.playlist_add),
+              label: const Text('Add to List'),
+              onPressed: () {
+                final rd = {
+                  'albumId': widget.albumId,
+                  'title': d['title'],
+                  'artist': d['artists'][0]['name'],
+                  'year': d['year'],
+                  'cover_image': (d['images'] as List?)?.isNotEmpty ?? false
+                      ? d['images'][0]['uri']
+                      : null,
+                };
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CustomListsPage(recordData: rd),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
