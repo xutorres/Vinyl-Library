@@ -1,1 +1,2 @@
-# CSCI490-Vinyl-Library
+# Vinyl Library
+Custom library to save collections of records owned
